@@ -7,12 +7,20 @@ import threading
 """
 Реализация COM-порта средствами serial
 """
- 
+
 class Communicate(QObject):
+    """
+    Класс для создания своего сигнала о пришедшем сообщении
+    """
     get_message = pyqtSignal()
 
+
 class Input(QWidget):
+    """
+    Класс главного окна
+    """
     def __init__(self):
+        """Конструктор окна"""
         self.ser = serial.Serial()
         self.name = ''
         super().__init__()
@@ -21,12 +29,39 @@ class Input(QWidget):
         self.init_ui()
 
     def closeEvent(self, event):
+        """Закрыть порт при закрытии приложения"""
         # закрытие порта
         self.end = True
         self.ser.close()
 
     def init_ui(self):
-        # Окно для работы с портом
+        """Окно для работы с портом
+            Атрибуты:
+                btn             кнопка отправки сообщения
+                le_input        окно ввода сообщения
+
+                le_output       окно выводящихся сообщений
+                signal          сигнал пришедших сообщений
+                lab_out         метка выводящихся сообщений
+
+                lab_settings    метка настроек
+                line            линия-разделитель
+
+                btn_byte        кнопка смены размера байта
+                box_byte        бокс выбора размеров байта
+
+                btn_speed       кнопка смены размера скорости
+                box_speed       бокс выбора значений скорости
+
+                btn_stop_bits   кнопка смены стоп битов
+                box_stop_bits   бокс выбора размеров стоп бита
+
+                btn_parity      кнопка смены четности
+                box_parity      бокс выбора четности
+
+                btn_name        кнопка смены имени порта
+                le_name         поле ввода имени
+        """
 
         # Отправить сообщение
         self.btn = QPushButton('Send', self)
@@ -156,7 +191,7 @@ class Input(QWidget):
         dialog.show()
 
     def send(self):
-        # функция отправки сообщения
+        """Функция отправки сообщения"""
         if not self.ser.is_open:
             self.show_dialog('You need to open port!')
         else:
@@ -175,7 +210,7 @@ class Input(QWidget):
                 self.le_input.setText('')
 
     def change_byte_size(self):
-        # функция изменения размера байта
+        """функция изменения размера байта"""
 
         if not self.ser.is_open:
             self.ser.bytesize = int(self.box_byte.currentText())
@@ -185,7 +220,7 @@ class Input(QWidget):
             self.ser.open()
 
     def change_baudrate(self):
-        # функция изменения скорости передачи
+        """функция изменения скорости передачи"""
         if not self.ser.is_open:
             self.ser.baudrate = int(self.box_speed.currentText())
         else:
@@ -194,7 +229,7 @@ class Input(QWidget):
             self.ser.open()
 
     def change_stop_bits(self):
-        # функция изменения числа стоп-битов
+        """функция изменения числа стоп-битов"""
         d = {'1': serial.STOPBITS_ONE, '2': serial.STOPBITS_TWO, '1.5': serial.STOPBITS_ONE_POINT_FIVE}
         if not self.ser.is_open:
             self.ser.stopbits = d[self.box_stop_bits.currentText()[1:-1]]
@@ -204,7 +239,7 @@ class Input(QWidget):
             self.ser.open()
 
     def change_parity(self):
-        # функция изменения контроля четности
+        """Функция изменения контроля четности"""
         d = {'e': serial.PARITY_EVEN, 'o': serial.PARITY_ODD, 'n': serial.PARITY_NONE}
         if not self.ser.is_open:
             self.ser.parity = d[self.box_parity.currentText()[1].lower()]
@@ -214,6 +249,7 @@ class Input(QWidget):
             self.ser.open()
 
     def change_name(self):
+        """Функция смены порта"""
         try:
             text = self.le_name.text()
         except:
@@ -229,13 +265,13 @@ class Input(QWidget):
                 self.show_dialog('Could not open port with name \"{}\"!'.format(text))
 
     def close_port(self):
-        # закрыть порт
+        """Функция закрытия порта"""
         self.ser.rts = True
         self.ser.dtr = True
         self.ser.close()
 
     def get_text(self):
-        # функция приема сообщений
+        """Функция приема сообщений"""
         while True:
             try:
                 if self.end is True:
@@ -252,6 +288,7 @@ class Input(QWidget):
                 print('problem with thread')
 
     def set_text(self):
+        """Установка текста"""
         self.le_output.setPlainText(bytearray(self.ser.read(self.ser.in_waiting)).decode('utf-8'))
 
 
