@@ -1,12 +1,15 @@
 ﻿import sys
-from PyQt5.QtWidgets import (QWidget, QPushButton, QLineEdit, QApplication, QLabel, QDialog, QGridLayout, QFrame, QTextEdit, QTextBrowser, QComboBox)
+from PyQt5.QtWidgets import (QWidget, QPushButton, QLineEdit, QApplication, QLabel, QDialog, QGridLayout, QFrame, QTextEdit, QTextBrowser, QComboBox, QCheckBox)
 from PyQt5.QtCore import (QObject, pyqtSignal)
 import serial
 import threading
 
-"""
-Реализация COM-порта средствами serial
-"""
+# """
+# Реализация COM-порта средствами serial
+# """
+# TODO Реализовать байт-стаффинг( на адресах отдельно, чтобы делать меньше мороки при формировании сообщений)
+# TODO Формирование пакетов: хедер сформировать сразу, в него вставлять данные. По 7 байт чистой информации??
+# TODO Второй поток-писатель? Пакеты из листа все равно отправлять надо по одному. Организовать ожидание обработки и приема
 
 class Communicate(QObject):
     """
@@ -22,10 +25,19 @@ class Input(QWidget):
     def __init__(self):
         """Конструктор окна"""
         self.ser = serial.Serial()
-        self.name = ''
         super().__init__()
+        # End Flag
         self.end = False
 
+        # Destination address
+        self.d_address = b'0'
+        # Source address
+        self.s_address = b'0'
+
+        self.start_flag = chr(0b10000001)
+        self.fcs = chr(0b10101010)
+
+        self.esc = chr(0b10000010)
         self.init_ui()
 
     def closeEvent(self, event):
@@ -166,7 +178,50 @@ class Input(QWidget):
         self.le_name.setFixedWidth(442)
         self.le_name.setPlaceholderText('Input port name')
 
-        self.setGeometry(300, 300, 600, 420)
+        # end settings line
+        # self.line_end = QFrame(self)
+        # self.line_end.setObjectName('line2')
+        # self.line_end.setGeometry(10, 255, 580, 255)
+        # self.line_end.setFrameShape(QFrame.HLine)
+        # self.line_end.setFrameShadow(QFrame.Sunken)
+
+        # Destination address
+        self.btn_d_address = QPushButton('Destination address', self)
+        self.btn_d_address.move(20, 420)
+        self.btn_d_address.clicked.connect(self.change_destination_address)
+
+        self.le_d_address = QLineEdit(self)
+        self.le_d_address.move(167, 423)
+        self.le_d_address.setPlaceholderText('Destination address')
+        self.le_d_address.setMaxLength(8)
+
+        # Source address
+        self.btn_s_address = QPushButton('Source address', self)
+        self.btn_s_address.move(20, 470)
+        self.btn_s_address.setFixedSize(121, 27)
+        self.btn_s_address.clicked.connect(self.change_source_address)
+
+        self.le_s_address = QLineEdit(self)
+        self.le_s_address.move(167, 473)
+        self.le_s_address.setPlaceholderText('Source address')
+        self.le_s_address.setMaxLength(8)
+
+        # Generate error
+        self.lab_error = QLabel("To generate error", self)
+        self.lab_error.move(370, 423)
+        self.cbox_error = QCheckBox(self)
+        self.cbox_error.move(500, 423)
+
+        # Debug
+        self.lab_debug = QLabel("Debug is here", self)
+        self.lab_debug.move(20, 535)
+
+        self.le_debug = QTextBrowser(self)
+        self.le_debug.move(130, 520)
+        self.le_debug.setFixedHeight(50)
+        self.le_debug.setFixedWidth(450)
+
+        self.setGeometry(300, 300, 600, 620)
         self.setWindowTitle('Input dialog')
         self.show()
 
@@ -200,14 +255,23 @@ class Input(QWidget):
             except:
                 self.show_dialog('You need to input text!')
             else:
-                # print(text)
-                # print('rts-', self.ser.rts)
-                # print('cts-', self.ser.cts)
-                # print('dtr-', self.ser.dtr)
-                # print('dsr-', self.ser.dsr)
+
                 self.ser.write(text.encode('utf-8'))
                 self.ser.rts = False
                 self.le_input.setText('')
+
+    def make_package(self, text):
+        """ Функция формирования пакетов"""
+        packs = []
+        x = 0
+        while x < len(s):
+            packs.apppend(self.start_flag + self.d_address + self.s_address + text[x:x+7])
+            x += 7
+            if self.cbox_error.isTristate():
+                packs[-1] += b'a'
+            else:
+                packs[-1] += self.fcs
+        return packs
 
     def change_byte_size(self):
         """функция изменения размера байта"""
@@ -270,6 +334,38 @@ class Input(QWidget):
         self.ser.dtr = True
         self.ser.close()
 
+    def get_address(self, adress):
+        """ Функция преобразования символов в байт"""
+        a = 0
+        i = 0
+        l = list(adress)
+        l.reverse()
+        for x in l:
+            if x != '1' and x != '0':
+                  self.show_dialog('You can use only \'1\' and \'0\' to set new adress!')
+                  break
+            a += int(x) * 2**i
+            i += 1
+        else:
+            return a
+        return 0
+
+    def change_destination_address(self):
+        try:
+            self.d_address = chr(self.get_address(self.le_d_address.text())).encode('utf-8')
+        except:
+            self.show_dialog('You need to input destination address!')
+        # else:
+        #     print(self.d_address)
+
+    def change_source_address(self):
+        try:
+            self.s_address = self.get_address(self.le_s_address.text())
+        except:
+            self.show_dialog('You need to input source address!')
+        # else:
+        #     print(self.s_address)
+
     def get_text(self):
         """Функция приема сообщений"""
         while True:
@@ -292,9 +388,36 @@ class Input(QWidget):
         self.le_output.setPlainText(bytearray(self.ser.read(self.ser.in_waiting)).decode('utf-8'))
 
 
-if __name__ == '__main__':
+if __name__ != '__main__':
     app = QApplication(sys.argv)
     ex = Input()
     t = threading.Thread(target=ex.get_text)
     t.start()
     sys.exit(app.exec_())
+
+
+print(hex(0b10000001).encode('utf-8'))
+
+start_flag = chr(0b10000001)
+fcs = chr(0b10101010)
+
+esc = chr(0b10000010) # 1000 0010
+print(ord(esc) >> 4)
+second = 0b00001111 & ord(start_flag)
+print(second)
+
+print((ord(esc)), (second))
+
+first_answer = 0b11110000 & ord(esc)
+sec_an = 0b00001111 & second
+print(first_answer + sec_an)
+# s = '1234567123456712345'
+# # l = [x for x in s]
+# l = []
+# x = 0
+# while x < len(s):
+#     l.append(s[x:x+7])
+#     x += 7
+# print(l)
+# l[-1] += 'asd'
+# print(l)
