@@ -30,9 +30,9 @@ class Input(QWidget):
         self.end = False
 
         # Destination address
-        self.d_address = b'0'
+        self.d_address = chr(0)
         # Source address
-        self.s_address = b'0'
+        self.s_address = chr(0)
 
         self.start_flag = chr(0b10000001)
         self.fcs = chr(0b10101010)
@@ -264,15 +264,46 @@ class Input(QWidget):
         """ Функция формирования пакетов"""
         packs = []
         x = 0
-        while x < len(s):
-            packs.apppend(self.start_flag + self.d_address + self.s_address + text[x:x+7])
+
+        while x < len(text):
+            data = ''
+            for c in text[x:x + 7]:
+                if c == self.start_flag:
+                    data += self.esc + chr(ord(c) + 1)
+                elif c == self.esc:
+                    data += self.esc + chr(ord(c) + 1)
+                else:
+                    data += str(c)
+            if data != '':
+                packs.append(self.start_flag + self.d_address + self.s_address + data)
             x += 7
             if self.cbox_error.isTristate():
-                packs[-1] += b'a'
+                packs[-1] += 'a'
             else:
                 packs[-1] += self.fcs
         return packs
 
+    def open_package(self, text):
+        i = 0
+        mes = ''
+        while i < len(text):
+            if text[i] == self.esc:
+                c = chr(ord(text[i + 1]) - 1)
+                print(c)
+                mes += c
+                i += 1
+            else:
+                mes += text[i]
+            i += 1
+        if mes[0] != self.start_flag:       # не флаг старта
+            return ''
+        elif mes[1] != self.s_address:        # не нам посылка
+            return ''
+        elif mes[-1] != self.fcs:             # ошибка флага контроля
+            return ''
+        else:
+            return mes[3:-1]
+        
     def change_byte_size(self):
         """функция изменения размера байта"""
 
@@ -351,16 +382,24 @@ class Input(QWidget):
         return 0
 
     def change_destination_address(self):
+        # если адрес будет равен esc символу или флагу начала, создать строку из esc-символа и символа
+        # код которого на 1 больше необходимого
         try:
-            self.d_address = chr(self.get_address(self.le_d_address.text())).encode('utf-8')
+            self.d_address = chr(self.get_address(self.le_d_address.text())) # .encode('utf-8')
+            if self.d_address == self.start_flag or self.d_address == self.esc:
+                self.d_address = self.esc + chr(ord(self.d_address) + 1)
         except:
             self.show_dialog('You need to input destination address!')
         # else:
         #     print(self.d_address)
 
     def change_source_address(self):
+        # если адрес будет равен esc символу или флагу начала, создать строку из esc-символа и символа
+        # код которого на 1 больше необходимого
         try:
-            self.s_address = self.get_address(self.le_s_address.text())
+            self.s_address = chr(self.get_address(self.le_s_address.text()))
+            if self.s_address == self.start_flag or self.s_address == self.esc:
+                self.s_address = self.esc + chr(ord(self.s_address) + 1)
         except:
             self.show_dialog('You need to input source address!')
         # else:
@@ -396,28 +435,73 @@ if __name__ != '__main__':
     sys.exit(app.exec_())
 
 
-print(hex(0b10000001).encode('utf-8'))
 
-start_flag = chr(0b10000001)
-fcs = chr(0b10101010)
+# print(ord(esc) >> 4)
+# second = 0b00001111 & ord(start_flag)
+# print(second)
+#
+# print((ord(esc)), (second))
+#
+# first_answer = 0b11110000 & ord(esc)
+# sec_an = 0b00001111 & second
+# print(first_answer + sec_an)
 
-esc = chr(0b10000010) # 1000 0010
-print(ord(esc) >> 4)
-second = 0b00001111 & ord(start_flag)
-print(second)
+# address = chr(0b10000001)
+# print('address: ', (address))
+# if address == start_flag:
+#     print('dd')
+#     address = esc + chr(0b00001111 & ord(start_flag))
+# if address == esc:
+#     address = esc + chr(0b00001111 & ord(esc))
+#
+# print('address: ', (address))
+# print(type(address), len(address))
+# print(type(esc))
+#
+# print('here: ', chr(ord(address[0]) & 0b11110000 + ord(address[1]) & 0b00001111))
+#
 
-print((ord(esc)), (second))
 
-first_answer = 0b11110000 & ord(esc)
-sec_an = 0b00001111 & second
-print(first_answer + sec_an)
+
+# start_flag = chr(0b10000001)
+# start_flag = '1'
+# fcs = chr(0b10101010)
+#
+# # esc = chr(0b00000010) # 1000 0010
+# esc = '2' # 1000 0010
+# print(esc)
+#
 # s = '1234567123456712345'
-# # l = [x for x in s]
 # l = []
 # x = 0
 # while x < len(s):
-#     l.append(s[x:x+7])
+#     data = ''
+#     for c in s[x:x+7]:
+#         if c == start_flag:
+#             data += esc + chr(ord(c) + 1)
+#         elif c == esc:
+#             data += esc + chr(ord(c) + 1)
+#         else:
+#             data += str(c)
+#     if data != '':
+#         l.append(data)
 #     x += 7
 # print(l)
-# l[-1] += 'asd'
-# print(l)
+# mes = ''
+# for x in l:
+#
+#     i = 0
+#     while i < len(x):
+#         if x[i] == esc:
+#             c = chr(ord(x[i + 1]) - 1)
+#             print(c)
+#             mes += c
+#             i += 1
+#         else:
+#             mes += x[i]
+#         i += 1
+#
+# print(mes)
+# start_flag = chr(0b10000001)
+# fcs = chr(0b10101010)
+# esc = chr(0b10000010)
