@@ -2,6 +2,7 @@
 from PyQt5.QtWidgets import (QWidget, QPushButton, QLineEdit, QApplication, QLabel, QDialog, QGridLayout, QFrame, QTextEdit, QTextBrowser, QComboBox, QCheckBox)
 from PyQt5.QtCore import (QObject, pyqtSignal)
 import serial
+import time
 import threading
 
 # """
@@ -24,7 +25,7 @@ class Input(QWidget):
     """
     def __init__(self):
         """Конструктор окна"""
-        self.ser = serial.Serial()
+        self.ser = serial.Serial(timeout=None)
         super().__init__()
         # End Flag
         self.end = False
@@ -38,6 +39,8 @@ class Input(QWidget):
         self.fcs = chr(0b10101010)
 
         self.esc = chr(0b10000010)
+
+        self.text = ''
         self.init_ui()
 
     def closeEvent(self, event):
@@ -256,9 +259,41 @@ class Input(QWidget):
                 self.show_dialog('You need to input text!')
             else:
 
-                self.ser.write(text.encode('utf-8'))
-                self.ser.rts = False
-                self.le_input.setText('')
+               self.send_packs(text)
+
+                #self.le_input.setText('')
+
+    def send_packs(self, text):
+        if not self.ser.dsr:
+            self.show_dialog('Destination port is closed!')
+            return
+        # text = self.le_input.toPlainText()
+        if text == '':
+            self.show_dialog('You need to input information!')
+            return
+        packs = self.make_package(text)
+
+        # if True:
+        #     return
+
+        self.ser.dtr = False                    # ща пойдут посылки
+        for p in packs:
+            self.ser.write(p.encode('utf-8'))   # сразу отправили
+
+            # self.ser.rts = False                # лови посылку !!!теперь нельзя дергать rts. Он тип нас сам оповестит
+
+            debug_info = ''
+            for c in p:
+                debug_info += hex(ord(c))
+               # пока он там с посылкой работает, мы подготовим информацию в окно debug
+
+            while self.ser.cts:             # если закончили раньше, будем ждать, пока он закончит(при окончании, читатель поднимет rts)
+                pass
+            # self.ser.rts = True
+
+        self.ser.dtr = True
+        self.le_debug.setText(debug_info)
+        self.le_input.setText('')
 
     def make_package(self, text):
         """ Функция формирования пакетов"""
@@ -277,8 +312,8 @@ class Input(QWidget):
             if data != '':
                 packs.append(self.start_flag + self.d_address + self.s_address + data)
             x += 7
-            if self.cbox_error.isTristate():
-                packs[-1] += 'a'
+            if self.cbox_error.checkState():
+                packs[-1] += 'f'
             else:
                 packs[-1] += self.fcs
         return packs
@@ -303,7 +338,7 @@ class Input(QWidget):
             return ''
         else:
             return mes[3:-1]
-        
+
     def change_byte_size(self):
         """функция изменения размера байта"""
 
@@ -405,29 +440,61 @@ class Input(QWidget):
         # else:
         #     print(self.s_address)
 
+    # def get_text(self):
+    #     """Функция приема сообщений"""
+    #     while True:
+    #         try:
+    #             if self.end is True:
+    #                 break
+    #             if self.ser.is_open:
+    #                 if not self.ser.cts and self.ser.dsr and self.ser.dtr:
+    #                     self.signal.get_message.emit()
+    #                     self.ser.dtr = False
+    #                 if not self.ser.dsr:
+    #                     self.ser.rts = True
+    #                 if not self.ser.dtr and self.ser.rts:
+    #                     self.ser.dtr = True
+    #         except:
+    #             print('problem with thread')
+
     def get_text(self):
         """Функция приема сообщений"""
         while True:
-            try:
+            #try:
                 if self.end is True:
                     break
                 if self.ser.is_open:
-                    if not self.ser.cts and self.ser.dsr and self.ser.dtr:
-                        self.signal.get_message.emit()
-                        self.ser.dtr = False
-                    if not self.ser.dsr:
+                    text = ''
+                    while not self.ser.dsr:                                 # сброшен dsr, значит идет отправка пакетов
+                        print('hello')
+                        if not self.ser.cts:                                # порт не открыт
+                            break
+
+                        text = bytearray(self.ser.read())                           # читаю 1 символ. Пусть хоть вечность идет
+                        text += bytearray(self.ser.read(self.ser.in_waiting))       # а теперь читаю отсавшиеся
+                        if text != '':                                          # если что-то прочитал, то распакавать и добавить к общему сообщению
+                            print(type(text))
+                            self.text += self.open_package(text.decode('utf-8'))
+                            print(type(self.text))
+                        self.ser.rts = False                                    # я закончил работать
+                        time.sleep(0.1)
                         self.ser.rts = True
-                    if not self.ser.dtr and self.ser.rts:
-                        self.ser.dtr = True
-            except:
-                print('problem with thread')
+                        # while not self.ser.cts:    # чтобы чувака не обогнать. Он ведь поднимет rts, а затем опять будет сбрасывать
+                        #     pass
+                    else:
+                        if text != '':
+                            self.signal.get_message.emit()
+
+            # except:
+            #     print('problem with thread')
 
     def set_text(self):
         """Установка текста"""
-        self.le_output.setPlainText(bytearray(self.ser.read(self.ser.in_waiting)).decode('utf-8'))
+        self.le_output.setPlainText(self.text)
+        self.text = ''
 
 
-if __name__ != '__main__':
+if __name__ == '__main__':
     app = QApplication(sys.argv)
     ex = Input()
     t = threading.Thread(target=ex.get_text)
@@ -435,73 +502,15 @@ if __name__ != '__main__':
     sys.exit(app.exec_())
 
 
-
-# print(ord(esc) >> 4)
-# second = 0b00001111 & ord(start_flag)
-# print(second)
-#
-# print((ord(esc)), (second))
-#
-# first_answer = 0b11110000 & ord(esc)
-# sec_an = 0b00001111 & second
-# print(first_answer + sec_an)
-
-# address = chr(0b10000001)
-# print('address: ', (address))
-# if address == start_flag:
-#     print('dd')
-#     address = esc + chr(0b00001111 & ord(start_flag))
-# if address == esc:
-#     address = esc + chr(0b00001111 & ord(esc))
-#
-# print('address: ', (address))
-# print(type(address), len(address))
-# print(type(esc))
-#
-# print('here: ', chr(ord(address[0]) & 0b11110000 + ord(address[1]) & 0b00001111))
-#
-
-
-
-# start_flag = chr(0b10000001)
-# start_flag = '1'
-# fcs = chr(0b10101010)
-#
-# # esc = chr(0b00000010) # 1000 0010
-# esc = '2' # 1000 0010
-# print(esc)
-#
-# s = '1234567123456712345'
-# l = []
-# x = 0
-# while x < len(s):
-#     data = ''
-#     for c in s[x:x+7]:
-#         if c == start_flag:
-#             data += esc + chr(ord(c) + 1)
-#         elif c == esc:
-#             data += esc + chr(ord(c) + 1)
-#         else:
-#             data += str(c)
-#     if data != '':
-#         l.append(data)
-#     x += 7
-# print(l)
-# mes = ''
-# for x in l:
-#
-#     i = 0
-#     while i < len(x):
-#         if x[i] == esc:
-#             c = chr(ord(x[i + 1]) - 1)
-#             print(c)
-#             mes += c
-#             i += 1
-#         else:
-#             mes += x[i]
-#         i += 1
-#
-# print(mes)
-# start_flag = chr(0b10000001)
-# fcs = chr(0b10101010)
-# esc = chr(0b10000010)
+b = bytearray(b'asd')
+print(b)
+b = b + bytearray(b'qqq')
+print(b)
+print(b.decode('utf-8'))
+# s = chr(0b10000001) + 's'
+# f = s.encode('utf-8')
+# print(type(f), f)
+# print(f.decode('utf-8'))
+# s = 'asdf'
+# s += '' + '' + ''
+# print(s)
