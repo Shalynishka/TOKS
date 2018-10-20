@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 from PyQt5.QtWidgets import (QWidget, QPushButton, QLineEdit, QApplication, QLabel, QDialog, QGridLayout, QFrame, QTextEdit, QTextBrowser, QComboBox, QCheckBox)
 from PyQt5.QtCore import (QObject, pyqtSignal)
 import serial
@@ -189,25 +189,25 @@ class Input(QWidget):
         # self.line_end.setFrameShadow(QFrame.Sunken)
 
         # Destination address
-        self.btn_d_address = QPushButton('Destination address', self)
-        self.btn_d_address.move(20, 420)
-        self.btn_d_address.clicked.connect(self.change_destination_address)
+        self.btn_d_a = QPushButton('Destination address', self)
+        self.btn_d_a.move(20, 420)
+        self.btn_d_a.clicked.connect(self.change_d_a)
 
-        self.le_d_address = QLineEdit(self)
-        self.le_d_address.move(167, 423)
-        self.le_d_address.setPlaceholderText('Destination address')
-        self.le_d_address.setMaxLength(8)
+        self.le_d_a = QLineEdit(self)
+        self.le_d_a.move(167, 423)
+        self.le_d_a.setPlaceholderText('Destination address')
+        self.le_d_a.setMaxLength(8)
 
         # Source address
-        self.btn_s_address = QPushButton('Source address', self)
-        self.btn_s_address.move(20, 470)
-        self.btn_s_address.setFixedSize(121, 27)
-        self.btn_s_address.clicked.connect(self.change_source_address)
+        self.btn_s_a = QPushButton('Source address', self)
+        self.btn_s_a.move(20, 470)
+        self.btn_s_a.setFixedSize(121, 27)
+        self.btn_s_a.clicked.connect(self.change_s_a)
 
-        self.le_s_address = QLineEdit(self)
-        self.le_s_address.move(167, 473)
-        self.le_s_address.setPlaceholderText('Source address')
-        self.le_s_address.setMaxLength(8)
+        self.le_s_a = QLineEdit(self)
+        self.le_s_a.move(167, 473)
+        self.le_s_a.setPlaceholderText('Source address')
+        self.le_s_a.setMaxLength(8)
 
         # Generate error
         self.lab_error = QLabel("To generate error", self)
@@ -267,77 +267,66 @@ class Input(QWidget):
         if not self.ser.dsr:
             self.show_dialog('Destination port is closed!')
             return
-        # text = self.le_input.toPlainText()
         if text == '':
             self.show_dialog('You need to input information!')
             return
         packs = self.make_package(text)
 
-        # if True:
-        #     return
-
         self.ser.dtr = False                    # ща пойдут посылки
-        for p in packs:
-            self.ser.write(p.encode('utf-8'))   # сразу отправили
-
-            # self.ser.rts = False                # лови посылку !!!теперь нельзя дергать rts. Он тип нас сам оповестит
-
-            debug_info = ''
-            for c in p:
-                debug_info += hex(ord(c))
-               # пока он там с посылкой работает, мы подготовим информацию в окно debug
-
-            while self.ser.cts:             # если закончили раньше, будем ждать, пока он закончит(при окончании, читатель поднимет rts)
-                pass
-            # self.ser.rts = True
-
+        debug_info = ''
+        self.ser.write(packs.encode('utf-8'))   # сразу отправили
         self.ser.dtr = True
+        # self.ser.rts = False                # лови посылку !!!теперь нельзя дергать rts. Он тип нас сам оповестит
+
+        for c in packs:
+            debug_info += hex(ord(c))
+
         self.le_debug.setText(debug_info)
         self.le_input.setText('')
 
     def make_package(self, text):
         """ Функция формирования пакетов"""
-        packs = []
+        packs = ''
         x = 0
-
         while x < len(text):
             data = ''
             for c in text[x:x + 7]:
-                if c == self.start_flag:
-                    data += self.esc + chr(ord(c) + 1)
-                elif c == self.esc:
+                if c == self.start_flag or c == self.esc or c == self.fcs:
                     data += self.esc + chr(ord(c) + 1)
                 else:
-                    data += str(c)
+                    data += c
             if data != '':
-                packs.append(self.start_flag + self.d_address + self.s_address + data)
+                if self.cbox_error.checkState():
+                    data += 'f'
+                else:
+                    data += self.fcs
+                packs += (self.start_flag + self.d_address + self.s_address + data)
             x += 7
-            if self.cbox_error.checkState():
-                packs[-1] += 'f'
-            else:
-                packs[-1] += self.fcs
         return packs
 
     def open_package(self, text):
-        i = 0
-        mes = ''
-        while i < len(text):
-            if text[i] == self.esc:
-                c = chr(ord(text[i + 1]) - 1)
-                print(c)
-                mes += c
-                i += 1
-            else:
-                mes += text[i]
-            i += 1
-        if mes[0] != self.start_flag:       # не флаг старта
-            return ''
-        elif mes[1] != self.s_address:        # не нам посылка
-            return ''
-        elif mes[-1] != self.fcs:             # ошибка флага контроля
-            return ''
+        data = ''
+        packs = text.split(self.fcs)[:-1]   # если нет fcs split вернет список со строкой = text. То есть ошибочное сообщение
+        if len(packs[0]) == len(text):
+            print('it\'s not good')
         else:
-            return mes[3:-1]
+            for p in packs:                 # проход списка пакетов
+                mes = ''
+                if p[0] != self.start_flag:
+                    continue
+                else:
+                    i = 1
+                    while i < len(p):               # стаффинг
+                        if p[i] == self.esc:
+                            mes += chr(ord(p[i + 1]) - 1)
+                            i += 1
+                        else:
+                            mes += p[i]
+                        i += 1
+                    if mes[0] != self.s_address:
+                        mes = ''
+                    data += mes[2:]
+        return data
 
     def change_byte_size(self):
         """функция изменения размера байта"""
@@ -408,37 +397,31 @@ class Input(QWidget):
         l.reverse()
         for x in l:
             if x != '1' and x != '0':
-                  self.show_dialog('You can use only \'1\' and \'0\' to set new adress!')
+                  self.show_dialog('You can use only \'1\' and \'0\' to set new address!')
                   break
             a += int(x) * 2**i
             i += 1
         else:
+            if a == self.start_flag or a == self.esc or a == self.fcs:
+                a = self.esc + chr(ord(a) + 1)
             return a
         return 0
 
-    def change_destination_address(self):
+    def change_d_a(self):
         # если адрес будет равен esc символу или флагу начала, создать строку из esc-символа и символа
         # код которого на 1 больше необходимого
         try:
-            self.d_address = chr(self.get_address(self.le_d_address.text())) # .encode('utf-8')
-            if self.d_address == self.start_flag or self.d_address == self.esc:
-                self.d_address = self.esc + chr(ord(self.d_address) + 1)
+            self.d_address = chr(self.get_address(self.le_d_a.text())) # .encode('utf-8')
         except:
             self.show_dialog('You need to input destination address!')
-        # else:
-        #     print(self.d_address)
 
-    def change_source_address(self):
+    def change_s_a(self):
         # если адрес будет равен esc символу или флагу начала, создать строку из esc-символа и символа
         # код которого на 1 больше необходимого
         try:
-            self.s_address = chr(self.get_address(self.le_s_address.text()))
-            if self.s_address == self.start_flag or self.s_address == self.esc:
-                self.s_address = self.esc + chr(ord(self.s_address) + 1)
+            self.s_address = chr(self.get_address(self.le_s_a.text()))
         except:
             self.show_dialog('You need to input source address!')
-        # else:
-        #     print(self.s_address)
 
     # def get_text(self):
     #     """Функция приема сообщений"""
@@ -460,38 +443,31 @@ class Input(QWidget):
     def get_text(self):
         """Функция приема сообщений"""
         while True:
-            #try:
+            try:
                 if self.end is True:
                     break
                 if self.ser.is_open:
                     text = ''
-                    while not self.ser.dsr:                                 # сброшен dsr, значит идет отправка пакетов
+                    while not self.ser.dsr and self.ser.cts:                                 # сброшен dsr, значит идет отправка пакетов
                         print('hello')
-                        if not self.ser.cts:                                # порт не открыт
-                            break
+                        # if not self.ser.cts:                                # порт не открыт
+                        #     break
 
                         text = bytearray(self.ser.read())                           # читаю 1 символ. Пусть хоть вечность идет
                         text += bytearray(self.ser.read(self.ser.in_waiting))       # а теперь читаю отсавшиеся
                         if text != '':                                          # если что-то прочитал, то распакавать и добавить к общему сообщению
-                            print(type(text))
                             self.text += self.open_package(text.decode('utf-8'))
-                            print(type(self.text))
-                        self.ser.rts = False                                    # я закончил работать
-                        time.sleep(0.1)
-                        self.ser.rts = True
-                        # while not self.ser.cts:    # чтобы чувака не обогнать. Он ведь поднимет rts, а затем опять будет сбрасывать
-                        #     pass
                     else:
                         if text != '':
                             self.signal.get_message.emit()
-
-            # except:
-            #     print('problem with thread')
+            except:
+                print('problem with thread')
 
     def set_text(self):
         """Установка текста"""
-        self.le_output.setPlainText(self.text)
-        self.text = ''
+        if self.text != '':
+            self.le_output.setPlainText(self.text)
+            self.text = ''
 
 
 if __name__ == '__main__':
@@ -501,16 +477,3 @@ if __name__ == '__main__':
     t.start()
     sys.exit(app.exec_())
 
-
-b = bytearray(b'asd')
-print(b)
-b = b + bytearray(b'qqq')
-print(b)
-print(b.decode('utf-8'))
-# s = chr(0b10000001) + 's'
-# f = s.encode('utf-8')
-# print(type(f), f)
-# print(f.decode('utf-8'))
-# s = 'asdf'
-# s += '' + '' + ''
-# print(s)
